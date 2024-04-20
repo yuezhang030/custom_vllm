@@ -48,6 +48,9 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.model_executor.utils import set_weight_attrs
 from vllm.sequence import SamplerOutput
 
+#from einops import rearrange
+#from flash_attn.layers.rotary import RotaryEmbedding as FlashRotaryEmbedding
+
 
 class MixtralMoE(nn.Module):
     """A tensor-parallel MoE implementation for Mixtral that shards each expert
@@ -176,13 +179,13 @@ class MixtralAttention(nn.Module):
             self.head_dim,
             self.total_num_heads,
             self.total_num_kv_heads,
-            bias=False,
+            bias=True,
             linear_method=linear_method,
         )
         self.o_proj = RowParallelLinear(
             self.total_num_heads * self.head_dim,
             hidden_size,
-            bias=False,
+            bias=True,
             linear_method=linear_method,
         )
         self.rotary_emb = get_rope(
@@ -192,6 +195,19 @@ class MixtralAttention(nn.Module):
             base=int(self.rope_theta),
             is_neox_style=True,
         )
+        # self.rotary_emb = MixtralRotaryEmbedding(
+        #     self.head_dim, ##head dim = 128?
+        #     max_position_embeddings=self.max_position_embeddings,
+        #     base=self.rope_theta,
+        # )
+
+#        rotary_cls = FlashRotaryEmbedding
+#        rotary_dim = 128
+#        rotary_base: float = 10000.0
+#        rotary_scale_base = None
+#        device = torch.device("cuda")
+#        self.rotary_emb_flash = rotary_cls(rotary_dim, base=rotary_base, scale_base=rotary_scale_base, device=device)
+
         self.attn = Attention(
             self.num_heads,
             self.head_dim,
@@ -209,6 +225,15 @@ class MixtralAttention(nn.Module):
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+
+ #       kv = torch.cat([k, v], dim=2)
+ #       kv = rearrange(kv, "... (two hkv d) -> ... two hkv d", two=2, d=self.head_dim)
+ #       kv_seq_len = k.shape[1]
+ #       seqlen_offset = 0
+
+ #       q, kv = self.rotary_emb_flash(q, kv=kv, seqlen_offset=seqlen_offset)
+ #       k, v = kv.chunk(2, dim=2)
+
         q, k = self.rotary_emb(positions, q, k)
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
         output, _ = self.o_proj(attn_output)
@@ -239,10 +264,10 @@ class MixtralDecoderLayer(nn.Module):
             top_k=config.num_experts_per_tok,
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size)
-        self.input_layernorm = RMSNorm(config.hidden_size,
-                                       eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(config.hidden_size,
-                                                eps=config.rms_norm_eps)
+        self.input_layernorm = nn.LayerNorm(config.hidden_size,
+                                       eps=config.rms_norm_eps, elementwise_affine=True)
+        self.post_attention_layernorm = nn.LayerNorm(config.hidden_size,
+                                                eps=config.rms_norm_eps, elementwise_affine=True)
 
     def forward(
         self,
@@ -253,23 +278,27 @@ class MixtralDecoderLayer(nn.Module):
         residual: Optional[torch.Tensor],
     ) -> torch.Tensor:
         # Self Attention
-        if residual is None:
-            residual = hidden_states
-            hidden_states = self.input_layernorm(hidden_states)
-        else:
-            hidden_states, residual = self.input_layernorm(
-                hidden_states, residual)
+        #if residual is None:
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        #else:
+        #    hidden_states = self.input_layernorm(
+        #        hidden_states)
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
             kv_cache=kv_cache,
             attn_metadata=attn_metadata,
         )
+        hidden_states = hidden_states + residual
 
         # Fully Connected
-        hidden_states, residual = self.post_attention_layernorm(
-            hidden_states, residual)
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(
+            hidden_states)
         hidden_states = self.block_sparse_moe(hidden_states)
+
+        hidden_states = hidden_states + residual
         return hidden_states, residual
 
 
@@ -297,7 +326,7 @@ class MixtralModel(nn.Module):
             MixtralDecoderLayer(config, linear_method=linear_method)
             for _ in range(config.num_hidden_layers)
         ])
-        self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.norm = nn.LayerNorm(config.hidden_size, eps=config.rms_norm_eps, elementwise_affine=True)
 
     def forward(
         self,
@@ -313,7 +342,7 @@ class MixtralModel(nn.Module):
             hidden_states, residual = layer(positions, hidden_states,
                                             kv_caches[i], attn_metadata,
                                             residual)
-        hidden_states, _ = self.norm(hidden_states, residual)
+        hidden_states = self.norm(hidden_states)
         return hidden_states
 
 
@@ -364,6 +393,7 @@ class MixtralForCausalLM(nn.Module):
             # We need bigger padding if using lora for kernel
             # compatibility
             if not lora_config else lora_config.lora_vocab_padding_size,
+            bias=True
         )
         self.logits_processor = LogitsProcessor(self.unpadded_vocab_size,
                                                 config.vocab_size)

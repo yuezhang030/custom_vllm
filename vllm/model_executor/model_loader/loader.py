@@ -22,14 +22,14 @@ from vllm.model_executor.model_loader.weight_utils import (
     download_weights_from_hf, filter_files_not_needed_for_inference,
     get_quant_config, initialize_dummy_weights, np_cache_weights_iterator,
     pt_weights_iterator, safetensors_weights_iterator)
-from vllm.model_executor.models.llava import LlavaForConditionalGeneration
+# from vllm.model_executor.models.llava import LlavaForConditionalGeneration
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.linear import LinearMethodBase
 
-_VISION_MODEL_CLASSES = [
-    LlavaForConditionalGeneration,
-]
+# _VISION_MODEL_CLASSES = [
+#     LlavaForConditionalGeneration,
+# ]
 
 logger = init_logger(__name__)
 
@@ -74,8 +74,8 @@ def _get_model_initialization_kwargs(
             "but LoRA is enabled. Support for this model may "
             "be added in the future. If this is important to you, "
             "please open an issue on github.")
-    elif model_class in _VISION_MODEL_CLASSES:
-        extra_kwargs["vision_language_config"] = vision_language_config
+    # elif model_class in _VISION_MODEL_CLASSES:
+    #     extra_kwargs["vision_language_config"] = vision_language_config
     return extra_kwargs
 
 
