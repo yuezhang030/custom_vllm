@@ -48,8 +48,8 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.model_executor.utils import set_weight_attrs
 from vllm.sequence import SamplerOutput
 
-#from einops import rearrange
-#from flash_attn.layers.rotary import RotaryEmbedding as FlashRotaryEmbedding
+# from einops import rearrange
+# from flash_attn.layers.rotary import RotaryEmbedding as FlashRotaryEmbedding
 
 
 class MixtralMoE(nn.Module):
@@ -188,6 +188,11 @@ class MixtralAttention(nn.Module):
             bias=True,
             linear_method=linear_method,
         )
+        # import pdb;pdb.set_trace()
+        # print(f"self.head_dim: {self.head_dim}")
+        # print(f"max_position: {max_position}")
+        # print(f"self.rope_theta: {self.rope_theta}")
+        # print(f"self.head_dim: {self.head_dim}")
         self.rotary_emb = get_rope(
             self.head_dim,
             rotary_dim=self.head_dim,
@@ -195,18 +200,19 @@ class MixtralAttention(nn.Module):
             base=int(self.rope_theta),
             is_neox_style=True,
         )
-        # self.rotary_emb = MixtralRotaryEmbedding(
-        #     self.head_dim, ##head dim = 128?
-        #     max_position_embeddings=self.max_position_embeddings,
-        #     base=self.rope_theta,
-        # )
 
-#        rotary_cls = FlashRotaryEmbedding
-#        rotary_dim = 128
-#        rotary_base: float = 10000.0
-#        rotary_scale_base = None
-#        device = torch.device("cuda")
-#        self.rotary_emb_flash = rotary_cls(rotary_dim, base=rotary_base, scale_base=rotary_scale_base, device=device)
+        # # self.rotary_emb = MixtralRotaryEmbedding(
+        # #     self.head_dim, ##head dim = 128?
+        # #     max_position_embeddings=self.max_position_embeddings,
+        # #     base=self.rope_theta,
+        # # )
+
+        # rotary_cls = FlashRotaryEmbedding
+        # rotary_dim = 128
+        # rotary_base: float = 10000.0
+        # rotary_scale_base = None
+        # device = torch.device("cuda")
+        # self.rotary_emb_flash = rotary_cls(rotary_dim, base=rotary_base, scale_base=rotary_scale_base, device=device)
 
         self.attn = Attention(
             self.num_heads,
@@ -226,15 +232,16 @@ class MixtralAttention(nn.Module):
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
 
- #       kv = torch.cat([k, v], dim=2)
- #       kv = rearrange(kv, "... (two hkv d) -> ... two hkv d", two=2, d=self.head_dim)
- #       kv_seq_len = k.shape[1]
- #       seqlen_offset = 0
-
- #       q, kv = self.rotary_emb_flash(q, kv=kv, seqlen_offset=seqlen_offset)
- #       k, v = kv.chunk(2, dim=2)
+        # kv = torch.cat([k, v], dim=2)
+        # kv = rearrange(kv, "... (two hkv d) -> ... two hkv d", two=2, d=self.head_dim)
+        # kv_seq_len = k.shape[1]
+        # seqlen_offset = 0
+ 
+        # q, kv = self.rotary_emb_flash(q, kv=kv, seqlen_offset=seqlen_offset)
+        # k, v = kv.chunk(2, dim=2)
 
         q, k = self.rotary_emb(positions, q, k)
+
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
         output, _ = self.o_proj(attn_output)
         return output

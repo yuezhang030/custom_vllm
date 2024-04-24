@@ -9,12 +9,12 @@ prompts = [
     "The future of AI is",
     "DeepSpeed is a",
 ]
-sampling_params = SamplingParams(temperature=0.8, top_p=0.95, max_tokens=200)
+sampling_params = SamplingParams(temperature=0.8, top_p=0.95, max_tokens=4096)
 
 llm = LLM(model="/mnt/output/youki/phi3-moe/hero-vanilla-phase2/123000_hf_bfloat16",
           tokenizer="/mnt/output/youki/phi3-moe/hero-vanilla-phase2/123000_hf_bfloat16",
         #   trust_remote_code=True,
-          dtype="bfloat16", tensor_parallel_size=2, max_model_len=200)
+          dtype="bfloat16", tensor_parallel_size=2, max_model_len=4096, disable_custom_all_reduce=True)
 # llm = LLM(model="facebook/opt-125m")
 #llm = LLM(model="mistralai/Mixtral-8x7B-v0.1", tensor_parallel_size=2, max_model_len=200)
 
