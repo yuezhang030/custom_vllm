@@ -113,6 +113,10 @@ class LLM:
             engine_args, usage_context=UsageContext.LLM_CLASS)
         self.request_counter = Counter()
 
+        print("*********************************")
+        print("Loading customized vllm engine...")
+        print("*********************************")
+
     def get_tokenizer(
             self) -> Union[PreTrainedTokenizer, PreTrainedTokenizerFast]:
         return self.llm_engine.tokenizer.tokenizer
